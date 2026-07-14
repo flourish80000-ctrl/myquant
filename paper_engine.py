@@ -5,8 +5,7 @@ from datetime import datetime
 from signal_engine import check_liquidity, check_tradeable, best_prices
 from database import init_db, log_signal
 from paper_trader import init_positions, open_position
-
-# Your ID card. Replace the text below with your real key.
+from compass import coin_from_question, direction_for
 from config import API_KEY
 
 headers = {"x-api-key": API_KEY}
@@ -20,11 +19,9 @@ with open("watchlist.json") as f:
 markets = {}
 for entry in watchlist:
     if entry["market_id"] not in markets:
-        markets[entry["market_id"]] = (entry["question"], entry["outcome_name"])
+        markets[entry["market_id"]] = entry["question"]
 
 
-# Fetch a market's order book. If the network hiccups, retry (up to 3 times).
-# Returns the JSON, or None if it truly can't get through this round.
 def fetch_book(market_id):
     url = f"https://api.predict.fun/v1/markets/{market_id}/orderbook"
     for attempt in range(3):
@@ -38,14 +35,22 @@ def fetch_book(market_id):
     return None
 
 
-print("Paper engine starting. Watching", len(markets),
+print("Compass engine starting. Watching", len(markets),
       "markets. Press Ctrl+C to stop.")
 
 while True:
-    for market_id, (question, outcome_name) in markets.items():
+    # Check the wind ONCE per round for each coin (saves API calls).
+    wind = {
+        "bitcoin": direction_for("bitcoin"),
+        "ethereum": direction_for("ethereum"),
+        "bnb": direction_for("bnb"),
+    }
+    print("compass this round:", wind)
+
+    for market_id, question in markets.items():
         data = fetch_book(market_id)
         if data is None:
-            continue  # skip this market this round; don't crash the engine
+            continue
 
         book = data["data"]
         trap = check_liquidity(book)
@@ -56,8 +61,13 @@ while True:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if healthy:
+            # THE COMPASS: bet the way the wind blows, not always "Up".
+            coin = coin_from_question(question)
+            direction = wind.get(coin)
+            if direction is None:
+                continue  # compass unsure — skip, never guess
             log_signal(timestamp, market_id, "HEALTHY", 0.0, market_price, 0.0)
-            open_position(timestamp, market_id, outcome_name, market_price)
+            open_position(timestamp, market_id, direction, market_price)
         elif trap:
             log_signal(timestamp, market_id, "TRAP", 0.0, market_price, 0.0)
 
