@@ -1,0 +1,5 @@
+config.py
+trades.db
+watchlist.json
+answer.txt
+__pycache__/
