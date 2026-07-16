@@ -17,29 +17,44 @@ def init_db():
             price_move_pct REAL
         )
     """)
+
+    # MIGRATION: add new columns only if they're missing.
+    # Old rows automatically get the DEFAULT — that's our backfill.
+    existing = [row[1] for row in cur.execute("PRAGMA table_info(trades)")]
+
+    if "venue" not in existing:
+        cur.execute("ALTER TABLE trades ADD COLUMN venue TEXT DEFAULT 'predict.fun'")
+        print("migration: added 'venue' column (old rows tagged 'predict.fun')")
+
+    if "symbol" not in existing:
+        # Hyperliquid has no numeric market_id — it uses names like 'BTC'.
+        cur.execute("ALTER TABLE trades ADD COLUMN symbol TEXT")
+        print("migration: added 'symbol' column")
+
     conn.commit()
     conn.close()
 
 
-def log_signal(timestamp, market_id, signal_type,
-               signal_strength, market_price, price_move_pct):
+def log_signal(timestamp, market_id, signal_type, signal_strength,
+               market_price, price_move_pct, venue="predict.fun", symbol=None):
     conn = sqlite3.connect(DB_FILE, timeout=30)
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO trades
-        (timestamp, market_id, signal_type, signal_strength, market_price, price_move_pct)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (timestamp, market_id, signal_type, signal_strength, market_price, price_move_pct))
+        (timestamp, market_id, signal_type, signal_strength,
+         market_price, price_move_pct, venue, symbol)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (timestamp, market_id, signal_type, signal_strength,
+          market_price, price_move_pct, venue, symbol))
     conn.commit()
     conn.close()
 
 
 if __name__ == "__main__":
     init_db()
-    log_signal("2026-01-01 12:00:00", 999999, "TRAP", 0.98, 0.5, 0.0)
-
     conn = sqlite3.connect(DB_FILE, timeout=30)
     cur = conn.cursor()
-    for row in cur.execute("SELECT * FROM trades"):
+    print("--- venue tally ---")
+    for row in cur.execute("SELECT venue, COUNT(*) FROM trades GROUP BY venue"):
         print(row)
     conn.close()
