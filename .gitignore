@@ -2,4 +2,5 @@ config.py
 trades.db
 watchlist.json
 answer.txt
-__pycache__/
+__pycache__/*.log
+dashboard_old.py
